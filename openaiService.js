@@ -72,7 +72,7 @@ async function getTaskIntro(task) {
             messages: [
                 {
                     role: "system",
-                    content: "You are an AI assistant helping a user make a phone call. Based on the user's task, generate a single, friendly opening sentence that the AI should say when the person answers the phone. The sentence should clearly state why you are calling. Keep it BRIEF and conversational. Do not use markdown."
+                    content: "You are an AI assistant helping a user make a phone call."
                 },
                 {
                     role: "user",

@@ -86,7 +86,6 @@ app.post("/voice/webhook", async function (req, res) {
                 break;
 
             case "call.answered": {
-                // Check if this is an outgoing call with a pre-defined intro message
                 const existingMessages = stateManager.getMessages(callControlId);
                 let greeting = "";
 
@@ -118,14 +117,17 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.playback.ended":
             case "call.speak.ended":
-                // Ensure transcription is stopped before recording with timeout_secs
+                if (stateManager.isProcessing(callControlId)) {
+                    console.log(`[index] Ignoring playback.ended for ${callControlId} since we are still processing.`);
+                    return;
+                }
+
                 await telnyxService.stopTranscription(callControlId);
                 await telnyxService.recordAudio(callControlId);
                 break;
 
             case "call.dtmf.received": {
                 console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
-                // Stop recording which will trigger call.recording.saved
                 await telnyxService.stopRecording(callControlId);
                 break;
             }
@@ -135,9 +137,9 @@ app.post("/voice/webhook", async function (req, res) {
                 const localPath = path.join(audioDir, `user_${callControlId}_${Date.now()}.mp3`);
 
                 console.log(`[STT] Processing recording: ${recordingUrl}`);
+                stateManager.setProcessing(callControlId, true);
                 await telnyxService.downloadRecording(recordingUrl, localPath);
 
-                // Play looping thinking sound while processing
                 await telnyxService.playAudio(callControlId, `${baseUrl}${THINK_SOUND_URL}`, true);
 
                 const transcript = await openaiService.transcribeAudio(localPath);
@@ -165,7 +167,6 @@ app.post("/voice/webhook", async function (req, res) {
                 const ttsPath = path.join(audioDir, ttsFilename);
                 await openaiService.generateTTS(aiResponse, ttsPath);
 
-                // Stop the looping thinking sound before playing the response
                 await telnyxService.stopAudio(callControlId);
 
                 console.log(`[index] Playing AI response for call ${callControlId}`);
@@ -177,9 +178,12 @@ app.post("/voice/webhook", async function (req, res) {
                 stateManager.endSession(callControlId);
                 break;
 
+            case "call.playback.started":
+                stateManager.setProcessing(callControlId, false);
+                break;
+
             case "call.transcription":
             case "call.speak.started":
-            case "call.playback.started":
                 break;
 
             default:

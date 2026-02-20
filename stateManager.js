@@ -2,7 +2,8 @@ const sessions = {};
 
 function initSession(callControlId) {
     sessions[callControlId] = {
-        messages: []
+        messages: [],
+        isProcessing: false
     };
 }
 
@@ -25,9 +26,21 @@ function endSession(callControlId) {
     delete sessions[callControlId];
 }
 
+function setProcessing(callControlId, value) {
+    if (sessions[callControlId]) {
+        sessions[callControlId].isProcessing = value;
+    }
+}
+
+function isProcessing(callControlId) {
+    return sessions[callControlId]?.isProcessing || false;
+}
+
 module.exports = {
     initSession,
     addMessage,
     getMessages,
-    endSession
+    endSession,
+    setProcessing,
+    isProcessing
 };

@@ -3,13 +3,10 @@ const telnyx = require("telnyx")(process.env.TELNYX_API_KEY);
 const https = require("https");
 const fs = require("fs");
 
-/**
- * Helper to identify Telnyx "Call has already ended" errors
- */
 function isCallEndedError(err) {
     const errorBody = err.raw || err.error || (err.response && err.response.data);
     if (!errorBody || !errorBody.errors) return false;
-    return errorBody.errors.some(e => e.code === "90018");
+    return errorBody.errors.some(e => ["90018", "90053", "90055"].includes(e.code));
 }
 
 function downloadRecording(url, dest) {
@@ -31,7 +28,9 @@ function downloadRecording(url, dest) {
 
 async function answerCall(callControlId) {
     try {
-        await telnyx.calls.actions.answer(callControlId);
+        await telnyx.calls.actions.answer(callControlId, {
+            transcription: false
+        });
     } catch (err) {
         if (isCallEndedError(err)) {
             console.log(`[telnyxService] Call ${callControlId} already ended during answer attempt.`);
@@ -67,7 +66,6 @@ async function stopAudio(callControlId) {
             return;
         }
         console.error(`[telnyxService] Error stopping audio for ${callControlId}:`, err.message || err);
-        // Don't throw here as it might be already stopped
     }
 }
 
@@ -117,7 +115,8 @@ async function createCall(to, from, webhookUrl, connectionId) {
             to,
             from,
             connection_id: connectionId,
-            webhook_url: webhookUrl
+            webhook_url: webhookUrl,
+            transcription: false
         });
         return call;
     } catch (err) {
