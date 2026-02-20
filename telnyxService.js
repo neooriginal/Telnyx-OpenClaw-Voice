@@ -24,15 +24,22 @@ async function answerCall(callControlId) {
     await telnyx.calls.actions.answer(callControlId);
 }
 
-async function playAudio(callControlId, audioUrl) {
-    await telnyx.calls.actions.startPlayback(callControlId, { audio_url: audioUrl });
+async function playAudio(callControlId, audioUrl, loop = false) {
+    await telnyx.calls.actions.startPlayback(callControlId, {
+        audio_url: audioUrl,
+        loop: loop ? "infinite" : 1
+    });
+}
+
+async function stopAudio(callControlId) {
+    await telnyx.calls.actions.playbackStop(callControlId);
 }
 
 async function recordAudio(callControlId) {
     await telnyx.calls.actions.startRecording(callControlId, {
         format: "mp3",
         channels: "single",
-        play_beep: true,
+        play_beep: false,
         timeout_secs: 2,
         maximum_length: 120,
     });
@@ -41,6 +48,7 @@ async function recordAudio(callControlId) {
 module.exports = {
     answerCall,
     playAudio,
+    stopAudio,
     recordAudio,
     downloadRecording
 };

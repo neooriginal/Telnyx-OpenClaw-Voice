@@ -11,8 +11,12 @@ const app = express();
 const port = process.env.PORT || 3023;
 let baseUrl = process.env.BASE_URL;
 
+const THINK_SOUND_FILE = "thinking.mp3";
+const THINK_SOUND_URL = `/audio-templates/${THINK_SOUND_FILE}`;
+
 app.use(express.json());
 app.use("/audio", express.static(path.join(__dirname, "audio")));
+app.use("/audio-templates", express.static(path.join(__dirname, "audioTemplates")));
 
 app.get("/health", function (req, res) {
     res.status(200).json({ status: "ok" });
@@ -44,7 +48,16 @@ app.post("/voice/webhook", async function (req, res) {
                 break;
 
             case "call.answered": {
-                const greeting = "Hello, I am an AI assistant. How can I help you today?";
+                let greeting = "";
+                let timeOfDay = new Date().getHours();
+                if (timeOfDay < 12) {
+                    greeting = "Guten Morgen";
+                } else if (timeOfDay < 18) {
+                    greeting = "Guten Tag";
+                } else {
+                    greeting = "Guten Abend";
+                }
+                greeting += ", " + process.env.NAME + ".";
                 stateManager.addMessage(callControlId, { role: "assistant", content: greeting });
 
                 const filename = `greeting_${callControlId}.mp3`;
@@ -67,6 +80,9 @@ app.post("/voice/webhook", async function (req, res) {
 
                 await telnyxService.downloadRecording(recordingUrl, localPath);
 
+                // Play looping thinking sound while processing
+                await telnyxService.playAudio(callControlId, `${baseUrl}${THINK_SOUND_URL}`, true);
+
                 const transcript = await openaiService.transcribeAudio(localPath);
                 if (!transcript?.trim()) {
                     await telnyxService.recordAudio(callControlId);
@@ -80,6 +96,9 @@ app.post("/voice/webhook", async function (req, res) {
                 const ttsFilename = `res_${callControlId}_${Date.now()}.mp3`;
                 const ttsPath = path.join(audioDir, ttsFilename);
                 await openaiService.generateTTS(aiResponse, ttsPath);
+
+                // Stop the looping thinking sound before playing the response
+                await telnyxService.stopAudio(callControlId);
 
                 await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
                 break;
