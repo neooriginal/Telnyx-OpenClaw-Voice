@@ -77,7 +77,7 @@ async function recordAudio(callControlId) {
             format: "mp3",
             channels: "single",
             play_beep: false,
-            timeout_secs: 0.7,
+            timeout_secs: 1,
             maximum_length: 120,
         });
     } catch (err) {
