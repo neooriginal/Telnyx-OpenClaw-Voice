@@ -133,7 +133,11 @@ app.post("/voice/webhook", async function (req, res) {
             case "call.speak.ended":
                 if (!stateManager.sessionExists(callControlId)) break;
                 stateManager.setProcessing(callControlId, false);
-                await telnyxService.recordAudio(callControlId);
+                setTimeout(async () => {
+                    try {
+                        await telnyxService.recordAudio(callControlId);
+                    } catch (e) {}
+                }, 1500);
                 break;
 
             case "call.dtmf.received": {
