@@ -3,6 +3,15 @@ const telnyx = require("telnyx")(process.env.TELNYX_API_KEY);
 const https = require("https");
 const fs = require("fs");
 
+/**
+ * Helper to identify Telnyx "Call has already ended" errors
+ */
+function isCallEndedError(err) {
+    const errorBody = err.raw || err.error || (err.response && err.response.data);
+    if (!errorBody || !errorBody.errors) return false;
+    return errorBody.errors.some(e => e.code === "90018");
+}
+
 function downloadRecording(url, dest) {
     return new Promise(function (resolve, reject) {
         const file = fs.createWriteStream(dest);
@@ -24,6 +33,10 @@ async function answerCall(callControlId) {
     try {
         await telnyx.calls.actions.answer(callControlId);
     } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during answer attempt.`);
+            return;
+        }
         console.error(`[telnyxService] Error answering call ${callControlId}:`, err.message || err);
         throw err;
     }
@@ -36,6 +49,10 @@ async function playAudio(callControlId, audioUrl, loop = false) {
             loop: loop ? "infinity" : 1
         });
     } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during playback attempt.`);
+            return;
+        }
         console.error(`[telnyxService] Error playing audio ${audioUrl} for ${callControlId}:`, err.message || err);
         throw err;
     }
@@ -45,6 +62,10 @@ async function stopAudio(callControlId) {
     try {
         await telnyx.calls.actions.stopPlayback(callControlId, {});
     } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during stop audio attempt.`);
+            return;
+        }
         console.error(`[telnyxService] Error stopping audio for ${callControlId}:`, err.message || err);
         // Don't throw here as it might be already stopped
     }
@@ -60,6 +81,10 @@ async function recordAudio(callControlId) {
             maximum_length: 120,
         });
     } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during record attempt.`);
+            return;
+        }
         console.error(`[telnyxService] Error starting recording for ${callControlId}:`, err.message || err);
         throw err;
     }
