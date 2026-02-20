@@ -14,6 +14,10 @@ let baseUrl = process.env.BASE_URL;
 app.use(express.json());
 app.use("/audio", express.static(path.join(__dirname, "audio")));
 
+app.get("/health", function (req, res) {
+    res.status(200).json({ status: "ok" });
+});
+
 const audioDir = path.join(__dirname, "audio");
 if (!fs.existsSync(audioDir)) {
     fs.mkdirSync(audioDir);
@@ -98,27 +102,22 @@ app.post("/voice/webhook", async function (req, res) {
     }
 });
 
-app.listen(port, async () => {
-    console.log(`Server listening on port ${port}`);
+app.listen(port, "0.0.0.0", async () => {
+    console.log(`Server listening on port ${port} (0.0.0.0)`);
 
     // Optional ngrok tunneling
     if (process.env.NGROK_AUTHTOKEN) {
         try {
-            const session = await new ngrok.SessionBuilder()
-                .authtokenFromEnv()
-                .metadata("Telnyx Voice AI App")
-                .connect();
+            const tunnel = await ngrok.forward({
+                addr: `127.0.0.1:${port}`,
+                authtoken: process.env.NGROK_AUTHTOKEN,
+                domain: process.env.NGROK_DOMAIN,
+                metadata: "Telnyx Voice AI App"
+            });
 
-            const tunnelBuilder = session.httpEndpoint();
-            if (process.env.NGROK_DOMAIN) {
-                tunnelBuilder.domain(process.env.NGROK_DOMAIN);
-            }
-
-            const tunnel = await tunnelBuilder.listen();
             console.log(`ngrok tunnel established at: ${tunnel.url()}`);
-
-            // Update baseUrl for Telnyx callback logic
             baseUrl = tunnel.url();
+            console.log(`Base URL updated to: ${baseUrl}`);
         } catch (err) {
             console.error("Error starting ngrok tunnel:", err);
         }
