@@ -1,0 +1,18 @@
+services:
+  telnyx-bot:
+    build: .
+    container_name: telnyx-voice-ai
+    restart: unless-stopped
+    ports:
+      - "3023:3023"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./audio:/app/audio
+      - ./logs:/app/logs
+
+volumes:
+  audio:
+  logs:

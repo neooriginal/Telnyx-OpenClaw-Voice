@@ -5,10 +5,11 @@ const fs = require("fs");
 const telnyxService = require("./telnyxService");
 const stateManager = require("./stateManager");
 const openaiService = require("./openaiService");
+const ngrok = require("@ngrok/ngrok");
 
 const app = express();
 const port = process.env.PORT || 3000;
-const baseUrl = process.env.BASE_URL;
+let baseUrl = process.env.BASE_URL;
 
 // Middleware to parse raw body for signature verification if needed
 // Or standard JSON parsing
@@ -113,6 +114,31 @@ app.post("/voice/webhook", async (req, res) => {
     }
 });
 
-app.listen(port, () => {
+app.listen(port, async () => {
     console.log(`Server listening on port ${port}`);
+
+    // Optional ngrok tunneling
+    if (process.env.NGROK_AUTHTOKEN) {
+        try {
+            const session = await new ngrok.SessionBuilder()
+                .authtokenFromEnv()
+                .metadata("Telnyx Voice AI App")
+                .connect();
+
+            const tunnelBuilder = session.httpEndpoint();
+            if (process.env.NGROK_DOMAIN) {
+                tunnelBuilder.domain(process.env.NGROK_DOMAIN);
+            }
+
+            const tunnel = await tunnelBuilder.listen();
+            console.log(`ngrok tunnel established at: ${tunnel.url()}`);
+
+            // Update baseUrl for Telnyx callback logic
+            baseUrl = tunnel.url();
+        } catch (err) {
+            console.error("Error starting ngrok tunnel:", err);
+        }
+    } else {
+        console.log(`Base URL: ${baseUrl}`);
+    }
 });
