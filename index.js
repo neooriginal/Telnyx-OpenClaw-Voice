@@ -65,6 +65,41 @@ if (!fs.existsSync(audioDir)) {
     fs.mkdirSync(audioDir);
 }
 
+async function processUserTranscript(callControlId, transcript) {
+    if (!transcript?.trim()) return;
+    if (!stateManager.sessionExists(callControlId)) {
+        console.log(`[STT] Session ${callControlId} no longer exists, ignoring transcript`);
+        return;
+    }
+
+    console.log(`[Chat] User: ${transcript}`);
+    stateManager.addMessage(callControlId, { role: "user", content: transcript });
+
+    const ttsFilename = `res_${callControlId}_${Date.now()}.mp3`;
+    const ttsPath = path.join(audioDir, ttsFilename);
+
+    try {
+        await telnyxService.playAudio(callControlId, `${baseUrl}${THINK_SOUND_URL}`, true);
+
+        let aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+        if (aiResponse === "HEARTBEAT_OK") {
+            aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+        }
+
+        console.log(`[Chat] AI: ${aiResponse}`);
+        stateManager.addMessage(callControlId, { role: "assistant", content: aiResponse });
+
+        await telnyxService.stopAudio(callControlId);
+        await openaiService.generateTTS(aiResponse, ttsPath);
+
+        console.log(`[index] Playing AI response for call ${callControlId}`);
+        await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
+    } catch (err) {
+        console.error(`[index] Error processing transcript for ${callControlId}:`, err);
+        await telnyxService.stopAudio(callControlId);
+    }
+}
+
 app.post("/voice/webhook", async function (req, res) {
     res.status(200).send("OK");
 
@@ -75,6 +110,11 @@ app.post("/voice/webhook", async function (req, res) {
     const { call_control_id: callControlId } = payload;
 
     console.log(`[${eventType}] ${callControlId}`);
+
+    if (!stateManager.sessionExists(callControlId) && eventType !== "call.initiated") {
+        console.log(`[index] No session for ${callControlId}, ignoring event`);
+        return;
+    }
 
     try {
         switch (eventType) {
@@ -117,60 +157,30 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.playback.ended":
             case "call.speak.ended":
-                if (stateManager.isProcessing(callControlId)) {
-                    console.log(`[index] Ignoring playback.ended for ${callControlId} since we are still processing.`);
-                    return;
-                }
-
-                await telnyxService.stopTranscription(callControlId);
-                await telnyxService.recordAudio(callControlId);
                 break;
 
             case "call.dtmf.received": {
                 console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
-                await telnyxService.stopRecording(callControlId);
+                const bufferedTranscript = stateManager.getTranscriptBuffer(callControlId);
+                stateManager.clearTranscriptBuffer(callControlId);
+                await processUserTranscript(callControlId, bufferedTranscript);
                 break;
             }
 
-            case "call.recording.saved": {
-                const recordingUrl = payload.recording_urls.mp3;
-                const localPath = path.join(audioDir, `user_${callControlId}_${Date.now()}.mp3`);
+            case "call.transcription": {
+                const transcript = payload.transcript?.text;
+                const isFinal = payload.transcript?.is_final;
 
-                console.log(`[STT] Processing recording: ${recordingUrl}`);
-                stateManager.setProcessing(callControlId, true);
-                await telnyxService.downloadRecording(recordingUrl, localPath);
+                if (!transcript) break;
 
-                await telnyxService.playAudio(callControlId, `${baseUrl}${THINK_SOUND_URL}`, true);
+                const currentBuffer = stateManager.getTranscriptBuffer(callControlId);
+                stateManager.setTranscriptBuffer(callControlId, currentBuffer + " " + transcript);
 
-                const transcript = await openaiService.transcribeAudio(localPath);
-                if (!transcript?.trim()) {
-                    console.log(`[STT] Empty transcript for ${callControlId}`);
-                    await telnyxService.recordAudio(callControlId);
-                    return;
+                if (isFinal) {
+                    const finalTranscript = stateManager.getTranscriptBuffer(callControlId);
+                    stateManager.clearTranscriptBuffer(callControlId);
+                    await processUserTranscript(callControlId, finalTranscript);
                 }
-
-                console.log(`[Chat] User: ${transcript}`);
-                stateManager.addMessage(callControlId, { role: "user", content: transcript });
-
-                let aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
-
-                // Filter out technical heartbeat messages
-                if (aiResponse === "HEARTBEAT_OK") {
-                    console.log(`[Chat] AI returned HEARTBEAT_OK, retrying...`);
-                    aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
-                }
-
-                console.log(`[Chat] AI: ${aiResponse}`);
-                stateManager.addMessage(callControlId, { role: "assistant", content: aiResponse });
-
-                const ttsFilename = `res_${callControlId}_${Date.now()}.mp3`;
-                const ttsPath = path.join(audioDir, ttsFilename);
-                await openaiService.generateTTS(aiResponse, ttsPath);
-
-                await telnyxService.stopAudio(callControlId);
-
-                console.log(`[index] Playing AI response for call ${callControlId}`);
-                await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
                 break;
             }
 
@@ -178,12 +188,8 @@ app.post("/voice/webhook", async function (req, res) {
                 stateManager.endSession(callControlId);
                 break;
 
-            case "call.playback.started":
-                stateManager.setProcessing(callControlId, false);
-                break;
-
-            case "call.transcription":
             case "call.speak.started":
+            case "call.playback.started":
                 break;
 
             default:
@@ -197,7 +203,6 @@ app.post("/voice/webhook", async function (req, res) {
 app.listen(port, "0.0.0.0", async () => {
     console.log(`Server listening on port ${port} (0.0.0.0)`);
 
-    // Optional ngrok tunneling
     if (process.env.NGROK_AUTHTOKEN) {
         try {
             const tunnel = await ngrok.forward({

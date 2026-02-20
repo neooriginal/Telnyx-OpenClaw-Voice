@@ -29,7 +29,7 @@ function downloadRecording(url, dest) {
 async function answerCall(callControlId) {
     try {
         await telnyx.calls.actions.answer(callControlId, {
-            transcription: false
+            transcription: { uuid: callControlId }
         });
     } catch (err) {
         if (isCallEndedError(err)) {
@@ -116,7 +116,7 @@ async function createCall(to, from, webhookUrl, connectionId) {
             from,
             connection_id: connectionId,
             webhook_url: webhookUrl,
-            transcription: false
+            transcription: { uuid: connectionId }
         });
         return call;
     } catch (err) {

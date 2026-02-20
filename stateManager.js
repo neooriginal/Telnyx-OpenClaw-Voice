@@ -3,7 +3,8 @@ const sessions = {};
 function initSession(callControlId) {
     sessions[callControlId] = {
         messages: [],
-        isProcessing: false
+        isProcessing: false,
+        transcriptBuffer: ""
     };
 }
 
@@ -36,11 +37,35 @@ function isProcessing(callControlId) {
     return sessions[callControlId]?.isProcessing || false;
 }
 
+function setTranscriptBuffer(callControlId, transcript) {
+    if (sessions[callControlId]) {
+        sessions[callControlId].transcriptBuffer = transcript;
+    }
+}
+
+function getTranscriptBuffer(callControlId) {
+    return sessions[callControlId]?.transcriptBuffer || "";
+}
+
+function clearTranscriptBuffer(callControlId) {
+    if (sessions[callControlId]) {
+        sessions[callControlId].transcriptBuffer = "";
+    }
+}
+
+function sessionExists(callControlId) {
+    return !!sessions[callControlId];
+}
+
 module.exports = {
     initSession,
     addMessage,
     getMessages,
     endSession,
     setProcessing,
-    isProcessing
+    isProcessing,
+    setTranscriptBuffer,
+    getTranscriptBuffer,
+    clearTranscriptBuffer,
+    sessionExists
 };
