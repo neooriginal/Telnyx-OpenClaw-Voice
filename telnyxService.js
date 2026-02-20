@@ -90,6 +90,27 @@ async function recordAudio(callControlId) {
     }
 }
 
+async function stopRecording(callControlId) {
+    try {
+        await telnyx.calls.actions.stopRecording(callControlId, {});
+    } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during stop recording attempt.`);
+            return;
+        }
+        console.error(`[telnyxService] Error stopping recording for ${callControlId}:`, err.message || err);
+    }
+}
+
+async function stopTranscription(callControlId) {
+    try {
+        await telnyx.calls.actions.stopTranscription(callControlId, {});
+    } catch (err) {
+        if (isCallEndedError(err)) return;
+        console.error(`[telnyxService] Error stopping transcription for ${callControlId}:`, err.message || err);
+    }
+}
+
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
         const call = await telnyx.calls.create({
@@ -111,5 +132,7 @@ module.exports = {
     stopAudio,
     recordAudio,
     downloadRecording,
-    createCall
+    createCall,
+    stopRecording,
+    stopTranscription
 };

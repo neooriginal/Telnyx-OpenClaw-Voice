@@ -29,7 +29,9 @@ async function getChatCompletion(messages) {
         const systemPrompt = {
             role: "system",
             content: `
-            You are being called per telephone. Keep your answers brief and conversational as they will be spoken over the phone. Do not use markdown or any kind of formatting.
+            You are being called per telephone. Keep your answers brief and conversational as they will be spoken over the phone.
+            Do not use markdown, bold, italics, or any kind of formatting.
+            Speak as a human would. Do not ever output technical tokens, heartbeat messages, or internal status updates like "HEARTBEAT_OK".
             `
         };
 

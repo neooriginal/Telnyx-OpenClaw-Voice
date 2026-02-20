@@ -118,8 +118,17 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.playback.ended":
             case "call.speak.ended":
+                // Ensure transcription is stopped before recording with timeout_secs
+                await telnyxService.stopTranscription(callControlId);
                 await telnyxService.recordAudio(callControlId);
                 break;
+
+            case "call.dtmf.received": {
+                console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
+                // Stop recording which will trigger call.recording.saved
+                await telnyxService.stopRecording(callControlId);
+                break;
+            }
 
             case "call.recording.saved": {
                 const recordingUrl = payload.recording_urls.mp3;
@@ -141,7 +150,14 @@ app.post("/voice/webhook", async function (req, res) {
                 console.log(`[Chat] User: ${transcript}`);
                 stateManager.addMessage(callControlId, { role: "user", content: transcript });
 
-                const aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+                let aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+
+                // Filter out technical heartbeat messages
+                if (aiResponse === "HEARTBEAT_OK") {
+                    console.log(`[Chat] AI returned HEARTBEAT_OK, retrying...`);
+                    aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+                }
+
                 console.log(`[Chat] AI: ${aiResponse}`);
                 stateManager.addMessage(callControlId, { role: "assistant", content: aiResponse });
 
