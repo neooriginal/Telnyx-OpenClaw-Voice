@@ -6,9 +6,12 @@ const https = require("https");
 const fs = require("fs");
 
 function isCallEndedError(err) {
-    const errorBody = err.raw || err.error || (err.response && err.response.data);
-    if (!errorBody || !errorBody.errors) return false;
-    return errorBody.errors.some(e => ["90018", "90053", "90055"].includes(e.code));
+    // v5 SDK: error details may be in err.error.errors or err.errors
+    const errors = (err.error && err.error.errors) || err.errors ||
+        (err.raw && err.raw.errors) ||
+        (err.response && err.response.data && err.response.data.errors);
+    if (!errors) return false;
+    return errors.some(e => ["90018", "90053", "90055"].includes(String(e.code)));
 }
 
 function downloadRecording(url, dest) {
@@ -71,13 +74,15 @@ async function stopAudio(callControlId) {
 
 async function recordAudio(callControlId) {
     try {
+        console.log(`[telnyxService] Starting recording for ${callControlId}`);
         await telnyx.calls.actions.startRecording(callControlId, {
             format: "mp3",
             channels: "single",
             play_beep: false,
-            timeout_secs: 2,
+            timeout_secs: 1,
             maximum_length: 120,
         });
+        console.log(`[telnyxService] Recording started for ${callControlId}`);
     } catch (err) {
         if (isCallEndedError(err)) {
             console.log(`[telnyxService] Call ${callControlId} already ended during record attempt.`);

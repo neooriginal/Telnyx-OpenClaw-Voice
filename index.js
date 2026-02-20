@@ -76,12 +76,15 @@ app.post("/voice/webhook", async function (req, res) {
 
     console.log(`[${eventType}] ${callControlId}`);
 
-    if (!stateManager.sessionExists(callControlId) && 
-        eventType !== "call.initiated" && 
+    if (!stateManager.sessionExists(callControlId) &&
+        eventType !== "call.initiated" &&
         eventType !== "call.answered") {
         console.log(`[index] No active session for ${callControlId}, ignoring ${eventType}`);
         return;
     }
+
+    // outbound call.initiated: session already created in /call endpoint, nothing to do
+    if (eventType === "call.initiated" && payload.direction === "outbound") return;
 
     try {
         switch (eventType) {
@@ -119,7 +122,9 @@ app.post("/voice/webhook", async function (req, res) {
 
                 const audioUrl = `${baseUrl}/audio/${filename}`;
                 stateManager.setProcessing(callControlId, true);
+                stateManager.setAwaitingUserInput(callControlId, true);
                 await telnyxService.playAudio(callControlId, audioUrl);
+                setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
                 break;
             }
 
@@ -133,11 +138,15 @@ app.post("/voice/webhook", async function (req, res) {
             case "call.speak.ended":
                 if (!stateManager.sessionExists(callControlId)) break;
                 stateManager.setProcessing(callControlId, false);
+                if (!stateManager.isAwaitingUserInput(callControlId)) break;
+                stateManager.setAwaitingUserInput(callControlId, false);
                 setTimeout(async () => {
                     try {
                         await telnyxService.recordAudio(callControlId);
-                    } catch (e) {}
-                }, 1500);
+                    } catch (e) {
+                        console.error(`[index] Failed to start recording for ${callControlId}:`, e.message || e);
+                    }
+                }, 500);
                 break;
 
             case "call.dtmf.received": {
@@ -158,17 +167,29 @@ app.post("/voice/webhook", async function (req, res) {
                 }
 
                 const recordingUrl = payload.recording_urls.mp3;
+
+                if (stateManager.hasProcessedRecording(callControlId, recordingUrl)) {
+                    console.log(`[index] Duplicate recording event, ignoring for ${callControlId}`);
+                    return;
+                }
+                stateManager.markRecordingProcessed(callControlId, recordingUrl);
+
                 const localPath = path.join(audioDir, `user_${callControlId}_${Date.now()}.mp3`);
 
                 console.log(`[STT] Processing recording: ${recordingUrl}`);
                 stateManager.setProcessing(callControlId, true);
+                stateManager.setAwaitingUserInput(callControlId, false);
                 await telnyxService.downloadRecording(recordingUrl, localPath);
 
                 await telnyxService.playAudio(callControlId, `${baseUrl}${THINK_SOUND_URL}`, true);
 
                 const transcript = await openaiService.transcribeAudio(localPath);
+                fs.unlink(localPath, () => { });
+
                 if (!transcript?.trim()) {
                     console.log(`[STT] Empty transcript for ${callControlId}`);
+                    await telnyxService.stopAudio(callControlId);
+                    stateManager.setAwaitingUserInput(callControlId, true);
                     stateManager.setProcessing(callControlId, false);
                     await telnyxService.recordAudio(callControlId);
                     return;
@@ -191,8 +212,12 @@ app.post("/voice/webhook", async function (req, res) {
 
                 await telnyxService.stopAudio(callControlId);
 
+                stateManager.setAwaitingUserInput(callControlId, true);
                 console.log(`[index] Playing AI response for call ${callControlId}`);
                 await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
+
+                // clean up TTS file after a delay to ensure Telnyx has finished fetching it
+                setTimeout(() => fs.unlink(ttsPath, () => { }), 60000);
                 break;
             }
 

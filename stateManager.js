@@ -3,7 +3,9 @@ const sessions = {};
 function initSession(callControlId) {
     sessions[callControlId] = {
         messages: [],
-        isProcessing: false
+        isProcessing: false,
+        awaitingUserInput: false,
+        processedRecordings: new Set()
     };
 }
 
@@ -36,6 +38,26 @@ function isProcessing(callControlId) {
     return sessions[callControlId]?.isProcessing || false;
 }
 
+function setAwaitingUserInput(callControlId, value) {
+    if (sessions[callControlId]) {
+        sessions[callControlId].awaitingUserInput = value;
+    }
+}
+
+function isAwaitingUserInput(callControlId) {
+    return sessions[callControlId]?.awaitingUserInput || false;
+}
+
+function hasProcessedRecording(callControlId, url) {
+    return sessions[callControlId]?.processedRecordings.has(url) || false;
+}
+
+function markRecordingProcessed(callControlId, url) {
+    if (sessions[callControlId]) {
+        sessions[callControlId].processedRecordings.add(url);
+    }
+}
+
 function sessionExists(callControlId) {
     return !!sessions[callControlId];
 }
@@ -47,5 +69,9 @@ module.exports = {
     endSession,
     setProcessing,
     isProcessing,
+    setAwaitingUserInput,
+    isAwaitingUserInput,
+    hasProcessedRecording,
+    markRecordingProcessed,
     sessionExists
 };
