@@ -15,7 +15,7 @@ async function transcribeAudio(filePath) {
     try {
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
-            model: "whisper-1",
+            model: "gpt-4o-transcribe",
         });
         return transcription.text;
     } catch (error) {
@@ -28,13 +28,15 @@ async function getChatCompletion(messages) {
     try {
         const systemPrompt = {
             role: "system",
-            content: "You are a helpful and concise phone assistant. Keep your answers brief and conversational as they will be spoken over the phone. Do not use markdown."
+            content: `
+            You are being called per telephone. Keep your answers brief and conversational as they will be spoken over the phone. Do not use markdown or any kind of formatting.
+            `
         };
 
         const response = await openclaw.chat.completions.create({
             model: "minimax-portal/MiniMax-M2.5",
             messages: [systemPrompt, ...messages],
-            max_tokens: 150,
+            max_tokens: 1500,
         });
 
         return response.choices[0].message.content;
@@ -47,7 +49,7 @@ async function getChatCompletion(messages) {
 async function generateTTS(text, destPath) {
     try {
         const mp3 = await openai.audio.speech.create({
-            model: "tts-1",
+            model: "gpt-4o-mini-tts",
             voice: "alloy",
             input: text,
         });
