@@ -61,8 +61,33 @@ async function generateTTS(text, destPath) {
     }
 }
 
+async function getTaskIntro(task) {
+    try {
+        const response = await openclaw.chat.completions.create({
+            model: "minimax-portal/MiniMax-M2.5",
+            messages: [
+                {
+                    role: "system",
+                    content: "You are an AI assistant helping a user make a phone call. Based on the user's task, generate a single, friendly opening sentence that the AI should say when the person answers the phone. The sentence should clearly state why you are calling. Keep it BRIEF and conversational. Do not use markdown."
+                },
+                {
+                    role: "user",
+                    content: `Task: ${task}`
+                }
+            ],
+            max_tokens: 100,
+        });
+
+        return response.choices[0].message.content;
+    } catch (error) {
+        console.error("Task Intro error:", error);
+        return "Hello, I'm calling regarding a request from my user.";
+    }
+}
+
 module.exports = {
     transcribeAudio,
     getChatCompletion,
-    generateTTS
+    generateTTS,
+    getTaskIntro
 };

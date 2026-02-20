@@ -22,6 +22,44 @@ app.get("/health", function (req, res) {
     res.status(200).json({ status: "ok" });
 });
 
+app.post("/call", async function (req, res) {
+    const { task, to } = req.body;
+    const toPhoneNumber = to || process.env.DEFAULT_TO_NUMBER;
+
+    if (!task) {
+        return res.status(400).json({ error: "Task is required" });
+    }
+    if (!toPhoneNumber) {
+        return res.status(400).json({ error: "To phone number is required" });
+    }
+
+    try {
+        console.log(`[index] Initiating call to ${toPhoneNumber} with task: ${task}`);
+        const introMessage = await openaiService.getTaskIntro(task);
+
+        const webhookUrl = `${baseUrl}/voice/webhook`;
+        const call = await telnyxService.createCall(
+            toPhoneNumber,
+            process.env.TELNYX_PHONE_NUMBER,
+            webhookUrl,
+            process.env.TELNYX_CONNECTION_ID
+        );
+
+        const callControlId = call.data.call_control_id;
+        stateManager.initSession(callControlId);
+        stateManager.addMessage(callControlId, { role: "assistant", content: introMessage });
+
+        res.status(200).json({
+            status: "Call initiated",
+            call_control_id: callControlId,
+            intro: introMessage
+        });
+    } catch (err) {
+        console.error("Error initiating call:", err);
+        res.status(500).json({ error: "Failed to initiate call" });
+    }
+});
+
 const audioDir = path.join(__dirname, "audio");
 if (!fs.existsSync(audioDir)) {
     fs.mkdirSync(audioDir);
@@ -48,19 +86,28 @@ app.post("/voice/webhook", async function (req, res) {
                 break;
 
             case "call.answered": {
+                // Check if this is an outgoing call with a pre-defined intro message
+                const existingMessages = stateManager.getMessages(callControlId);
                 let greeting = "";
-                let timeOfDay = new Date().getHours();
-                if (timeOfDay < 12) {
-                    greeting = "Guten Morgen";
-                } else if (timeOfDay < 18) {
-                    greeting = "Guten Tag";
-                } else {
-                    greeting = "Guten Abend";
-                }
-                greeting += ", " + process.env.NAME + ".";
-                stateManager.addMessage(callControlId, { role: "assistant", content: greeting });
 
-                const filename = `greeting_${callControlId}.mp3`;
+                if (existingMessages.length > 0 && existingMessages[existingMessages.length - 1].role === "assistant") {
+                    greeting = existingMessages[existingMessages.length - 1].content;
+                    console.log(`[index] Using pre-defined intro for call ${callControlId}: ${greeting}`);
+                } else {
+                    let timeOfDay = new Date().getHours();
+                    if (timeOfDay < 12) {
+                        greeting = "Guten Morgen";
+                    } else if (timeOfDay < 18) {
+                        greeting = "Guten Tag";
+                    } else {
+                        greeting = "Guten Abend";
+                    }
+                    greeting += ", " + process.env.NAME + ".";
+                    stateManager.addMessage(callControlId, { role: "assistant", content: greeting });
+                    console.log(`[index] Using default greeting for call ${callControlId}`);
+                }
+
+                const filename = `greeting_${callControlId}_${Date.now()}.mp3`;
                 const audioPath = path.join(audioDir, filename);
                 await openaiService.generateTTS(greeting, audioPath);
 

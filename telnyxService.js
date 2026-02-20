@@ -77,7 +77,7 @@ async function recordAudio(callControlId) {
             format: "mp3",
             channels: "single",
             play_beep: false,
-            timeout_secs: 2,
+            timeout_secs: 0.7,
             maximum_length: 120,
         });
     } catch (err) {
@@ -90,10 +90,26 @@ async function recordAudio(callControlId) {
     }
 }
 
+async function createCall(to, from, webhookUrl, connectionId) {
+    try {
+        const call = await telnyx.calls.create({
+            to,
+            from,
+            connection_id: connectionId,
+            webhook_url: webhookUrl
+        });
+        return call;
+    } catch (err) {
+        console.error(`[telnyxService] Error creating call to ${to}:`, err.message || err);
+        throw err;
+    }
+}
+
 module.exports = {
     answerCall,
     playAudio,
     stopAudio,
     recordAudio,
-    downloadRecording
+    downloadRecording,
+    createCall
 };
