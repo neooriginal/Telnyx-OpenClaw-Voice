@@ -78,6 +78,7 @@ app.post("/voice/webhook", async function (req, res) {
                 const recordingUrl = payload.recording_urls.mp3;
                 const localPath = path.join(audioDir, `user_${callControlId}_${Date.now()}.mp3`);
 
+                console.log(`[STT] Processing recording: ${recordingUrl}`);
                 await telnyxService.downloadRecording(recordingUrl, localPath);
 
                 // Play looping thinking sound while processing
@@ -85,12 +86,16 @@ app.post("/voice/webhook", async function (req, res) {
 
                 const transcript = await openaiService.transcribeAudio(localPath);
                 if (!transcript?.trim()) {
+                    console.log(`[STT] Empty transcript for ${callControlId}`);
                     await telnyxService.recordAudio(callControlId);
                     return;
                 }
 
+                console.log(`[Chat] User: ${transcript}`);
                 stateManager.addMessage(callControlId, { role: "user", content: transcript });
+
                 const aiResponse = await openaiService.getChatCompletion(stateManager.getMessages(callControlId));
+                console.log(`[Chat] AI: ${aiResponse}`);
                 stateManager.addMessage(callControlId, { role: "assistant", content: aiResponse });
 
                 const ttsFilename = `res_${callControlId}_${Date.now()}.mp3`;
