@@ -21,28 +21,48 @@ function downloadRecording(url, dest) {
 }
 
 async function answerCall(callControlId) {
-    await telnyx.calls.actions.answer(callControlId);
+    try {
+        await telnyx.calls.actions.answer(callControlId);
+    } catch (err) {
+        console.error(`[telnyxService] Error answering call ${callControlId}:`, err.message || err);
+        throw err;
+    }
 }
 
 async function playAudio(callControlId, audioUrl, loop = false) {
-    await telnyx.calls.actions.startPlayback(callControlId, {
-        audio_url: audioUrl,
-        loop: loop ? "infinite" : 1
-    });
+    try {
+        await telnyx.calls.actions.startPlayback(callControlId, {
+            audio_url: audioUrl,
+            loop: loop ? "infinity" : 1
+        });
+    } catch (err) {
+        console.error(`[telnyxService] Error playing audio ${audioUrl} for ${callControlId}:`, err.message || err);
+        throw err;
+    }
 }
 
 async function stopAudio(callControlId) {
-    await telnyx.calls.actions.playbackStop(callControlId);
+    try {
+        await telnyx.calls.actions.playbackStop(callControlId);
+    } catch (err) {
+        console.error(`[telnyxService] Error stopping audio for ${callControlId}:`, err.message || err);
+        // Don't throw here as it might be already stopped
+    }
 }
 
 async function recordAudio(callControlId) {
-    await telnyx.calls.actions.startRecording(callControlId, {
-        format: "mp3",
-        channels: "single",
-        play_beep: false,
-        timeout_secs: 2,
-        maximum_length: 120,
-    });
+    try {
+        await telnyx.calls.actions.startRecording(callControlId, {
+            format: "mp3",
+            channels: "single",
+            play_beep: false,
+            timeout_secs: 2,
+            maximum_length: 120,
+        });
+    } catch (err) {
+        console.error(`[telnyxService] Error starting recording for ${callControlId}:`, err.message || err);
+        throw err;
+    }
 }
 
 module.exports = {
