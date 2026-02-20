@@ -118,13 +118,21 @@ app.post("/voice/webhook", async function (req, res) {
                 await openaiService.generateTTS(greeting, audioPath);
 
                 const audioUrl = `${baseUrl}/audio/${filename}`;
+                stateManager.setProcessing(callControlId, true);
                 await telnyxService.playAudio(callControlId, audioUrl);
                 break;
             }
 
+            case "call.playback.started":
+                if (stateManager.sessionExists(callControlId)) {
+                    stateManager.setProcessing(callControlId, true);
+                }
+                break;
+
             case "call.playback.ended":
             case "call.speak.ended":
                 if (!stateManager.sessionExists(callControlId)) break;
+                stateManager.setProcessing(callControlId, false);
                 await telnyxService.recordAudio(callControlId);
                 break;
 
@@ -137,6 +145,11 @@ app.post("/voice/webhook", async function (req, res) {
             case "call.recording.saved": {
                 if (!stateManager.sessionExists(callControlId)) {
                     console.log(`[index] Session ended, ignoring recording for ${callControlId}`);
+                    return;
+                }
+
+                if (stateManager.isProcessing(callControlId)) {
+                    console.log(`[index] AI is speaking, ignoring recording for ${callControlId}`);
                     return;
                 }
 
@@ -181,12 +194,6 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.hangup":
                 stateManager.endSession(callControlId);
-                break;
-
-            case "call.playback.started":
-                if (stateManager.sessionExists(callControlId)) {
-                    stateManager.setProcessing(callControlId, false);
-                }
                 break;
 
             default:
