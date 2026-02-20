@@ -1,5 +1,7 @@
 require("dotenv").config();
-const telnyx = require("telnyx")(process.env.TELNYX_API_KEY);
+const TelnyxSDK = require("telnyx");
+const TelnyxClient = TelnyxSDK.default || TelnyxSDK;
+const telnyx = new TelnyxClient({ apiKey: process.env.TELNYX_API_KEY });
 const https = require("https");
 const fs = require("fs");
 
@@ -111,12 +113,11 @@ async function stopTranscription(callControlId) {
 
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
-        const call = await telnyx.callControlCalls.create({
+        const call = await telnyx.calls.dial({
             to,
             from,
             connection_id: connectionId,
             webhook_url: webhookUrl,
-            transcription: { uuid: connectionId }
         });
         return call;
     } catch (err) {
