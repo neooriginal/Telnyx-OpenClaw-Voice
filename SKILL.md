@@ -14,7 +14,7 @@ This skill allows an AI assistant to initiate phone calls to users and carry out
 
 ## API Documentation
 
-BASE URL: http://localhost:3032 (may differ)
+BASE URL: http://localhost:3023 (may differ)
 
 ### POST `/call`
 Initiates an outgoing call.
