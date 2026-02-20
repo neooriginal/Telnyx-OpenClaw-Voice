@@ -30,9 +30,7 @@ function downloadRecording(url, dest) {
 
 async function answerCall(callControlId) {
     try {
-        await telnyx.calls.actions.answer(callControlId, {
-            transcription: { uuid: callControlId }
-        });
+        await telnyx.calls.actions.answer(callControlId);
     } catch (err) {
         if (isCallEndedError(err)) {
             console.log(`[telnyxService] Call ${callControlId} already ended during answer attempt.`);
@@ -77,7 +75,7 @@ async function recordAudio(callControlId) {
             format: "mp3",
             channels: "single",
             play_beep: false,
-            timeout_secs: 1,
+            timeout_secs: 2,
             maximum_length: 120,
         });
     } catch (err) {
