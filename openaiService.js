@@ -11,9 +11,6 @@ const openclaw = new OpenAI({
     baseURL: process.env.OPENCLAW_BASE_URL || "http://localhost:18789/v1",
 });
 
-/**
- * Transcribe an audio file using Whisper
- */
 async function transcribeAudio(filePath) {
     try {
         const transcription = await openai.audio.transcriptions.create({
@@ -22,17 +19,13 @@ async function transcribeAudio(filePath) {
         });
         return transcription.text;
     } catch (error) {
-        console.error("Error transcribing audio:", error);
+        console.error("Transcription error:", error);
         return "";
     }
 }
 
-/**
- * Get response from GPT model
- */
 async function getChatCompletion(messages) {
     try {
-        // We prepend a system prompt 
         const systemPrompt = {
             role: "system",
             content: "You are a helpful and concise phone assistant. Keep your answers brief and conversational as they will be spoken over the phone. Do not use markdown."
@@ -46,26 +39,23 @@ async function getChatCompletion(messages) {
 
         return response.choices[0].message.content;
     } catch (error) {
-        console.error("Error getting chat completion:", error);
+        console.error("LLM error:", error);
         return "I'm sorry, I encountered an error.";
     }
 }
 
-/**
- * Generate Text-to-Speech audio and save to disk
- */
 async function generateTTS(text, destPath) {
     try {
         const mp3 = await openai.audio.speech.create({
             model: "tts-1",
-            voice: "alloy", // alloy, echo, fable, onyx, nova, shimmer
+            voice: "alloy",
             input: text,
         });
 
         const buffer = Buffer.from(await mp3.arrayBuffer());
         await fs.promises.writeFile(destPath, buffer);
     } catch (error) {
-        console.error("Error generating TTS:", error);
+        console.error("TTS error:", error);
     }
 }
 
