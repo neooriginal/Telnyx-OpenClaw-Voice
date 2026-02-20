@@ -43,7 +43,7 @@ async function playAudio(callControlId, audioUrl, loop = false) {
 
 async function stopAudio(callControlId) {
     try {
-        await telnyx.calls.actions.playbackStop(callControlId);
+        await telnyx.calls.actions.stopPlayback(callControlId, {});
     } catch (err) {
         console.error(`[telnyxService] Error stopping audio for ${callControlId}:`, err.message || err);
         // Don't throw here as it might be already stopped

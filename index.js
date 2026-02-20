@@ -105,6 +105,7 @@ app.post("/voice/webhook", async function (req, res) {
                 // Stop the looping thinking sound before playing the response
                 await telnyxService.stopAudio(callControlId);
 
+                console.log(`[index] Playing AI response for call ${callControlId}`);
                 await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
                 break;
             }
