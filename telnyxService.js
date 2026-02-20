@@ -28,9 +28,7 @@ function downloadRecording(url, dest) {
 
 async function answerCall(callControlId) {
     try {
-        await telnyx.calls.actions.answer(callControlId, {
-            transcription: { uuid: callControlId }
-        });
+        await telnyx.calls.actions.answer(callControlId);
     } catch (err) {
         if (isCallEndedError(err)) {
             console.log(`[telnyxService] Call ${callControlId} already ended during answer attempt.`);
@@ -111,12 +109,11 @@ async function stopTranscription(callControlId) {
 
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
-        const call = await telnyx.callControlCalls.create({
+        const call = await telnyx.calls.create({
             to,
             from,
             connection_id: connectionId,
-            webhook_url: webhookUrl,
-            transcription: { uuid: connectionId }
+            webhook_url: webhookUrl
         });
         return call;
     } catch (err) {
