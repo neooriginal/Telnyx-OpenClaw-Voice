@@ -111,7 +111,7 @@ async function stopTranscription(callControlId) {
 
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
-        const call = await telnyx.calls.create({
+        const call = await telnyx.callControlCalls.create({
             to,
             from,
             connection_id: connectionId,
