@@ -11,9 +11,7 @@ const app = express();
 const port = process.env.PORT || 3023;
 let baseUrl = process.env.BASE_URL;
 
-const THINK_SOUND_FILE = "thinking.mp3";
-const THINK_SOUND_URL = `/audio-templates/${THINK_SOUND_FILE}`;
-
+const THINK_SOUND_URL = "/audio-templates/thinking.mp3";
 const INBOUND_GREETING_URL = "/audio-templates/greeting.mp3";
 
 app.use(express.json());
@@ -85,7 +83,6 @@ app.post("/voice/webhook", async function (req, res) {
         return;
     }
 
-    // outbound call.initiated: session already created in /call endpoint, nothing to do
     if (eventType === "call.initiated" && payload.direction === "outbound") return;
 
     try {
@@ -102,18 +99,14 @@ app.post("/voice/webhook", async function (req, res) {
                 stateManager.setProcessing(callControlId, true);
                 stateManager.setAwaitingUserInput(callControlId, true);
 
-                if (existingMessages.length > 0 && existingMessages[existingMessages.length - 1].role === "assistant") {
-                    // outbound call: play TTS of the pre-generated intro
-                    const intro = existingMessages[existingMessages.length - 1].content;
-                    console.log(`[index] Using pre-defined intro for call ${callControlId}`);
+                const lastMessage = existingMessages.at(-1);
+                if (lastMessage?.role === "assistant") {
                     const filename = `greeting_${callControlId}_${Date.now()}.mp3`;
                     const audioPath = path.join(audioDir, filename);
-                    await openaiService.generateTTS(intro, audioPath);
+                    await openaiService.generateTTS(lastMessage.content, audioPath);
                     await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${filename}`);
                     setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
                 } else {
-                    // inbound call: play static greeting from audioTemplates
-                    console.log(`[index] Using static inbound greeting for call ${callControlId}`);
                     stateManager.addMessage(callControlId, { role: "assistant", content: "[greeting]" });
                     await telnyxService.playAudio(callControlId, `${baseUrl}${INBOUND_GREETING_URL}`);
                 }
@@ -121,9 +114,7 @@ app.post("/voice/webhook", async function (req, res) {
             }
 
             case "call.playback.started":
-                if (stateManager.sessionExists(callControlId)) {
-                    stateManager.setProcessing(callControlId, true);
-                }
+                stateManager.setProcessing(callControlId, true);
                 break;
 
             case "call.playback.ended":
@@ -208,7 +199,6 @@ app.post("/voice/webhook", async function (req, res) {
                 console.log(`[index] Playing AI response for call ${callControlId}`);
                 await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${ttsFilename}`);
 
-                // clean up TTS file after a delay to ensure Telnyx has finished fetching it
                 setTimeout(() => fs.unlink(ttsPath, () => { }), 60000);
                 break;
             }

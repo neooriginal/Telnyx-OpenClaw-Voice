@@ -1,4 +1,3 @@
-require("dotenv").config();
 const TelnyxSDK = require("telnyx");
 const TelnyxClient = TelnyxSDK.default || TelnyxSDK;
 const telnyx = new TelnyxClient({ apiKey: process.env.TELNYX_API_KEY });
@@ -6,7 +5,6 @@ const https = require("https");
 const fs = require("fs");
 
 function isCallEndedError(err) {
-    // v5 SDK: error details may be in err.error.errors or err.errors
     const errors = (err.error && err.error.errors) || err.errors ||
         (err.raw && err.raw.errors) ||
         (err.response && err.response.data && err.response.data.errors);
@@ -105,15 +103,6 @@ async function stopRecording(callControlId) {
     }
 }
 
-async function stopTranscription(callControlId) {
-    try {
-        await telnyx.calls.actions.stopTranscription(callControlId, {});
-    } catch (err) {
-        if (isCallEndedError(err)) return;
-        console.error(`[telnyxService] Error stopping transcription for ${callControlId}:`, err.message || err);
-    }
-}
-
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
         const call = await telnyx.calls.dial({
@@ -136,6 +125,5 @@ module.exports = {
     recordAudio,
     downloadRecording,
     createCall,
-    stopRecording,
-    stopTranscription
+    stopRecording
 };

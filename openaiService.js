@@ -1,4 +1,3 @@
-require("dotenv").config();
 const { OpenAI } = require("openai");
 const fs = require("fs");
 
@@ -28,13 +27,11 @@ async function getChatCompletion(messages) {
     try {
         const systemPrompt = {
             role: "system",
-            content: `
-            You are being called per telephone. Keep your answers brief and conversational as they will be spoken over the phone.
-            Do not use markdown, bold, italics, or any kind of formatting.
-            Speak as a human would. Do not ever output technical tokens, heartbeat messages, or internal status updates like "HEARTBEAT_OK".
-            Use your memory to personalize the answer.
-            Always respond on the first response with a chat message while on the phone, tool calling can happen after.
-            `
+            content: `You are being called per telephone. Keep your answers brief and conversational as they will be spoken over the phone.
+Do not use markdown, bold, italics, or any kind of formatting.
+Speak as a human would. Do not ever output technical tokens, heartbeat messages, or internal status updates like "HEARTBEAT_OK".
+Use your memory to personalize the answer.
+Always respond on the first response with a chat message while on the phone, tool calling can happen after.`
         };
 
         const response = await openclaw.chat.completions.create({
