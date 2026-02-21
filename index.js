@@ -14,6 +14,8 @@ let baseUrl = process.env.BASE_URL;
 const THINK_SOUND_FILE = "thinking.mp3";
 const THINK_SOUND_URL = `/audio-templates/${THINK_SOUND_FILE}`;
 
+const INBOUND_GREETING_URL = "/audio-templates/greeting.mp3";
+
 app.use(express.json());
 app.use("/audio", express.static(path.join(__dirname, "audio")));
 app.use("/audio-templates", express.static(path.join(__dirname, "audioTemplates")));
@@ -97,34 +99,24 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.answered": {
                 const existingMessages = stateManager.getMessages(callControlId);
-                let greeting = "";
-
-                if (existingMessages.length > 0 && existingMessages[existingMessages.length - 1].role === "assistant") {
-                    greeting = existingMessages[existingMessages.length - 1].content;
-                    console.log(`[index] Using pre-defined intro for call ${callControlId}`);
-                } else {
-                    let timeOfDay = new Date().getHours();
-                    if (timeOfDay < 12) {
-                        greeting = "Guten Morgen";
-                    } else if (timeOfDay < 18) {
-                        greeting = "Guten Tag";
-                    } else {
-                        greeting = "Guten Abend";
-                    }
-                    greeting += ", " + process.env.NAME + ".";
-                    stateManager.addMessage(callControlId, { role: "assistant", content: greeting });
-                    console.log(`[index] Using default greeting for call ${callControlId}`);
-                }
-
-                const filename = `greeting_${callControlId}_${Date.now()}.mp3`;
-                const audioPath = path.join(audioDir, filename);
-                await openaiService.generateTTS(greeting, audioPath);
-
-                const audioUrl = `${baseUrl}/audio/${filename}`;
                 stateManager.setProcessing(callControlId, true);
                 stateManager.setAwaitingUserInput(callControlId, true);
-                await telnyxService.playAudio(callControlId, audioUrl);
-                setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
+
+                if (existingMessages.length > 0 && existingMessages[existingMessages.length - 1].role === "assistant") {
+                    // outbound call: play TTS of the pre-generated intro
+                    const intro = existingMessages[existingMessages.length - 1].content;
+                    console.log(`[index] Using pre-defined intro for call ${callControlId}`);
+                    const filename = `greeting_${callControlId}_${Date.now()}.mp3`;
+                    const audioPath = path.join(audioDir, filename);
+                    await openaiService.generateTTS(intro, audioPath);
+                    await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${filename}`);
+                    setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
+                } else {
+                    // inbound call: play static greeting from audioTemplates
+                    console.log(`[index] Using static inbound greeting for call ${callControlId}`);
+                    stateManager.addMessage(callControlId, { role: "assistant", content: "[greeting]" });
+                    await telnyxService.playAudio(callControlId, `${baseUrl}${INBOUND_GREETING_URL}`);
+                }
                 break;
             }
 
