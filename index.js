@@ -14,6 +14,15 @@ let baseUrl = process.env.BASE_URL;
 const THINK_SOUND_URL = "/audio-templates/thinking.mp3";
 const INBOUND_GREETING_URL = "/audio-templates/greeting.mp3";
 
+let lastOutboundCallAt = 0;
+const OUTBOUND_RATE_LIMIT_MS = 60 * 1000;
+
+function isNumberAllowed(number) {
+    const whitelist = process.env.ALLOWED_NUMBERS;
+    if (!whitelist || !whitelist.trim()) return true;
+    return whitelist.split(",").map(n => n.trim()).includes(number);
+}
+
 app.use(express.json());
 app.use("/audio", express.static(path.join(__dirname, "audio")));
 app.use("/audio-templates", express.static(path.join(__dirname, "audioTemplates")));
@@ -32,6 +41,19 @@ app.post("/call", async function (req, res) {
     if (!toPhoneNumber) {
         return res.status(400).json({ error: "To phone number is required" });
     }
+
+    if (!isNumberAllowed(toPhoneNumber)) {
+        console.warn(`[index] Rejected call to unlisted number: ${toPhoneNumber}`);
+        return res.status(403).json({ error: "Number not in allowed list" });
+    }
+
+    const now = Date.now();
+    if (now - lastOutboundCallAt < OUTBOUND_RATE_LIMIT_MS) {
+        const retryAfter = Math.ceil((OUTBOUND_RATE_LIMIT_MS - (now - lastOutboundCallAt)) / 1000);
+        console.warn(`[index] Rate limit hit, retry in ${retryAfter}s`);
+        return res.status(429).json({ error: "Rate limit: 1 outbound call per minute", retry_after_secs: retryAfter });
+    }
+    lastOutboundCallAt = now;
 
     try {
         console.log(`[index] Initiating call to ${toPhoneNumber} with task: ${task}`);
