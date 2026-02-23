@@ -77,8 +77,7 @@ async function recordAudio(callControlId) {
             format: "mp3",
             channels: "single",
             play_beep: false,
-            timeout_secs: 4,
-            maximum_length: 120,
+            time_limit: 60,
         });
         console.log(`[telnyxService] Recording started for ${callControlId}`);
     } catch (err) {

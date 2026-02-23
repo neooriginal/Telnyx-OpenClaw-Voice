@@ -17,6 +17,33 @@ const INBOUND_GREETING_URL = "/audio-templates/greeting.mp3";
 let lastOutboundCallAt = 0;
 const OUTBOUND_RATE_LIMIT_MS = 60 * 1000;
 
+// Auto-stop timers: stop recording after silence so call.recording.saved fires reliably
+const RECORDING_TURN_LIMIT_MS = 8000; // 8 s of user speech per turn
+const recordingTimers = new Map();
+
+function scheduleRecordingStop(callControlId) {
+    cancelRecordingTimer(callControlId);
+    const timer = setTimeout(async () => {
+        recordingTimers.delete(callControlId);
+        if (!stateManager.sessionExists(callControlId)) return;
+        console.log(`[index] Auto-stopping recording for ${callControlId}`);
+        try {
+            await telnyxService.stopRecording(callControlId);
+        } catch (e) {
+            console.error(`[index] Auto-stop recording error for ${callControlId}:`, e.message || e);
+        }
+    }, RECORDING_TURN_LIMIT_MS);
+    recordingTimers.set(callControlId, timer);
+}
+
+function cancelRecordingTimer(callControlId) {
+    const t = recordingTimers.get(callControlId);
+    if (t) {
+        clearTimeout(t);
+        recordingTimers.delete(callControlId);
+    }
+}
+
 function isNumberAllowed(number) {
     const whitelist = process.env.ALLOWED_NUMBERS;
     if (!whitelist || !whitelist.trim()) return true;
@@ -96,7 +123,7 @@ app.post("/voice/webhook", async function (req, res) {
     const { event_type: eventType, payload } = event.data;
     const { call_control_id: callControlId } = payload;
 
-    console.log(`[${eventType}] ${callControlId}`);
+    console.log(`[${eventType}] ${callControlId} | processing=${stateManager.isProcessing(callControlId)} awaitingInput=${stateManager.isAwaitingUserInput(callControlId)}`);
 
     if (!stateManager.sessionExists(callControlId) &&
         eventType !== "call.initiated" &&
@@ -143,11 +170,15 @@ app.post("/voice/webhook", async function (req, res) {
             case "call.speak.ended":
                 if (!stateManager.sessionExists(callControlId)) break;
                 stateManager.setProcessing(callControlId, false);
-                if (!stateManager.isAwaitingUserInput(callControlId)) break;
+                if (!stateManager.isAwaitingUserInput(callControlId)) {
+                    console.log(`[index] Playback ended but not awaiting user input for ${callControlId}, skipping record`);
+                    break;
+                }
                 stateManager.setAwaitingUserInput(callControlId, false);
                 setTimeout(async () => {
                     try {
                         await telnyxService.recordAudio(callControlId);
+                        scheduleRecordingStop(callControlId);
                     } catch (e) {
                         console.error(`[index] Failed to start recording for ${callControlId}:`, e.message || e);
                     }
@@ -156,11 +187,14 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.dtmf.received": {
                 console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
+                cancelRecordingTimer(callControlId);
                 await telnyxService.stopRecording(callControlId);
                 break;
             }
 
             case "call.recording.saved": {
+                cancelRecordingTimer(callControlId);
+
                 if (!stateManager.sessionExists(callControlId)) {
                     console.log(`[index] Session ended, ignoring recording for ${callControlId}`);
                     return;
@@ -171,7 +205,11 @@ app.post("/voice/webhook", async function (req, res) {
                     return;
                 }
 
-                const recordingUrl = payload.recording_urls.mp3;
+                const recordingUrl = payload.recording_urls?.mp3;
+                if (!recordingUrl) {
+                    console.log(`[index] No mp3 URL in recording payload for ${callControlId}:`, JSON.stringify(payload));
+                    return;
+                }
 
                 if (stateManager.hasProcessedRecording(callControlId, recordingUrl)) {
                     console.log(`[index] Duplicate recording event, ignoring for ${callControlId}`);
@@ -197,6 +235,7 @@ app.post("/voice/webhook", async function (req, res) {
                     stateManager.setAwaitingUserInput(callControlId, true);
                     stateManager.setProcessing(callControlId, false);
                     await telnyxService.recordAudio(callControlId);
+                    scheduleRecordingStop(callControlId);
                     return;
                 }
 
@@ -226,6 +265,7 @@ app.post("/voice/webhook", async function (req, res) {
             }
 
             case "call.hangup":
+                cancelRecordingTimer(callControlId);
                 stateManager.endSession(callControlId);
                 break;
 
