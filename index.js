@@ -51,8 +51,8 @@ function isNumberAllowed(number) {
 }
 
 // PIN auth for non-whitelisted inbound callers
-const NON_WHITELIST_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes between PIN attempts
-const PIN_TIMEOUT_MS = 10 * 1000;                  // 10 seconds to enter PIN after prompt
+const NON_WHITELIST_COOLDOWN_MS = parseInt(process.env.PIN_COOLDOWN_SECS || "600", 10) * 1000;
+const PIN_TIMEOUT_MS = parseInt(process.env.PIN_TIMEOUT_SECS || "10", 10) * 1000;
 const nonWhitelistCallLog = new Map();             // number -> timestamp of last answered attempt
 const pinPendingSessions = new Map();              // callControlId -> { digits, timer, callerNumber }
 
