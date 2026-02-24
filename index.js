@@ -194,7 +194,23 @@ app.post("/voice/webhook", async function (req, res) {
             case "call.dtmf.received": {
                 console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
                 cancelRecordingTimer(callControlId);
+                // Prevent any in-flight recording.saved from being processed as a new turn
+                stateManager.setProcessing(callControlId, true);
+                stateManager.setAwaitingUserInput(callControlId, false);
+                // Stop AI speech (if playing) and any active recording
+                await telnyxService.stopAudio(callControlId);
                 await telnyxService.stopRecording(callControlId);
+                // Start a fresh recording turn regardless of previous state
+                setTimeout(async () => {
+                    if (!stateManager.sessionExists(callControlId)) return;
+                    stateManager.setProcessing(callControlId, false);
+                    try {
+                        await telnyxService.recordAudio(callControlId);
+                        scheduleRecordingStop(callControlId);
+                    } catch (e) {
+                        console.error(`[index] DTMF: Failed to start recording for ${callControlId}:`, e.message || e);
+                    }
+                }, 300);
                 break;
             }
 
