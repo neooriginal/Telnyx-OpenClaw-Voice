@@ -102,6 +102,18 @@ async function stopRecording(callControlId) {
     }
 }
 
+async function rejectCall(callControlId) {
+    try {
+        await telnyx.calls.actions.reject(callControlId, { cause: "CALL_REJECTED" });
+    } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during reject attempt.`);
+            return;
+        }
+        console.error(`[telnyxService] Error rejecting call ${callControlId}:`, err.message || err);
+    }
+}
+
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
         const call = await telnyx.calls.dial({
@@ -119,6 +131,7 @@ async function createCall(to, from, webhookUrl, connectionId) {
 
 module.exports = {
     answerCall,
+    rejectCall,
     playAudio,
     stopAudio,
     recordAudio,

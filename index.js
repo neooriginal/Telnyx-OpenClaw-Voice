@@ -138,6 +138,12 @@ app.post("/voice/webhook", async function (req, res) {
         switch (eventType) {
             case "call.initiated":
                 if (payload.direction === "incoming") {
+                    const callerNumber = payload.from;
+                    if (!isNumberAllowed(callerNumber)) {
+                        console.warn(`[index] Rejected inbound call from unlisted number: ${callerNumber}`);
+                        await telnyxService.rejectCall(callControlId);
+                        break;
+                    }
                     await telnyxService.answerCall(callControlId);
                     stateManager.initSession(callControlId);
                 }
