@@ -174,15 +174,16 @@ app.post("/voice/webhook", async function (req, res) {
                 break;
 
             case "call.answered": {
-                // PIN prompt for non-whitelisted callers
+                // PIN auth for non-whitelisted callers: stay silent, start 10s timeout immediately
                 if (pinPendingSessions.has(callControlId)) {
-                    const pinPromptText = process.env.PIN_PROMPT_TEXT ||
-                        "This line is restricted. Please enter your 4-digit access code now.";
-                    const filename = `pin_prompt_${callControlId}_${Date.now()}.mp3`;
-                    const audioPath = path.join(audioDir, filename);
-                    await openaiService.generateTTS(pinPromptText, audioPath);
-                    await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${filename}`);
-                    setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
+                    const ps = pinPendingSessions.get(callControlId);
+                    ps.timer = setTimeout(async () => {
+                        if (!pinPendingSessions.has(callControlId)) return;
+                        console.warn(`[PIN] Timeout for ${callControlId}, hanging up`);
+                        pinPendingSessions.delete(callControlId);
+                        await telnyxService.hangupCall(callControlId);
+                    }, PIN_TIMEOUT_MS);
+                    console.log(`[PIN] Silent wait started (${PIN_TIMEOUT_MS / 1000}s) for ${callControlId}`);
                     break;
                 }
 
@@ -210,18 +211,6 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.playback.ended":
             case "call.speak.ended":
-                // Start the 10-second PIN timeout once the prompt finishes playing
-                if (pinPendingSessions.has(callControlId)) {
-                    const ps = pinPendingSessions.get(callControlId);
-                    if (ps.timer) clearTimeout(ps.timer);
-                    ps.timer = setTimeout(async () => {
-                        if (!pinPendingSessions.has(callControlId)) return;
-                        console.warn(`[PIN] Timeout for ${callControlId}, hanging up`);
-                        pinPendingSessions.delete(callControlId);
-                        await telnyxService.hangupCall(callControlId);
-                    }, PIN_TIMEOUT_MS);
-                    break;
-                }
                 if (!stateManager.sessionExists(callControlId)) break;
                 stateManager.setProcessing(callControlId, false);
                 if (!stateManager.isAwaitingUserInput(callControlId)) {
