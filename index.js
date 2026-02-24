@@ -50,6 +50,20 @@ function isNumberAllowed(number) {
     return whitelist.split(",").map(n => n.trim()).includes(number);
 }
 
+// PIN auth for non-whitelisted inbound callers
+const NON_WHITELIST_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes between PIN attempts
+const PIN_TIMEOUT_MS = 10 * 1000;                  // 10 seconds to enter PIN after prompt
+const nonWhitelistCallLog = new Map();             // number -> timestamp of last answered attempt
+const pinPendingSessions = new Map();              // callControlId -> { digits, timer, callerNumber }
+
+function clearPinSession(callControlId) {
+    const ps = pinPendingSessions.get(callControlId);
+    if (ps) {
+        clearTimeout(ps.timer);
+        pinPendingSessions.delete(callControlId);
+    }
+}
+
 app.use(express.json());
 app.use("/audio", express.static(path.join(__dirname, "audio")));
 app.use("/audio-templates", express.static(path.join(__dirname, "audioTemplates")));
@@ -126,6 +140,7 @@ app.post("/voice/webhook", async function (req, res) {
     console.log(`[${eventType}] ${callControlId} | processing=${stateManager.isProcessing(callControlId)} awaitingInput=${stateManager.isAwaitingUserInput(callControlId)}`);
 
     if (!stateManager.sessionExists(callControlId) &&
+        !pinPendingSessions.has(callControlId) &&
         eventType !== "call.initiated" &&
         eventType !== "call.answered") {
         console.log(`[index] No active session for ${callControlId}, ignoring ${eventType}`);
@@ -140,8 +155,17 @@ app.post("/voice/webhook", async function (req, res) {
                 if (payload.direction === "incoming") {
                     const callerNumber = payload.from;
                     if (!isNumberAllowed(callerNumber)) {
-                        console.warn(`[index] Rejected inbound call from unlisted number: ${callerNumber}`);
-                        await telnyxService.rejectCall(callControlId);
+                        const lastAttempt = nonWhitelistCallLog.get(callerNumber);
+                        if (lastAttempt && (Date.now() - lastAttempt) < NON_WHITELIST_COOLDOWN_MS) {
+                            console.warn(`[index] Rate-limited non-whitelisted call from ${callerNumber}, hanging up`);
+                            await telnyxService.rejectCall(callControlId);
+                            break;
+                        }
+                        // Answer and prompt for PIN
+                        nonWhitelistCallLog.set(callerNumber, Date.now());
+                        await telnyxService.answerCall(callControlId);
+                        pinPendingSessions.set(callControlId, { digits: "", timer: null, callerNumber });
+                        console.log(`[PIN] Awaiting PIN from non-whitelisted caller ${callerNumber} on ${callControlId}`);
                         break;
                     }
                     await telnyxService.answerCall(callControlId);
@@ -150,6 +174,18 @@ app.post("/voice/webhook", async function (req, res) {
                 break;
 
             case "call.answered": {
+                // PIN prompt for non-whitelisted callers
+                if (pinPendingSessions.has(callControlId)) {
+                    const pinPromptText = process.env.PIN_PROMPT_TEXT ||
+                        "This line is restricted. Please enter your 4-digit access code now.";
+                    const filename = `pin_prompt_${callControlId}_${Date.now()}.mp3`;
+                    const audioPath = path.join(audioDir, filename);
+                    await openaiService.generateTTS(pinPromptText, audioPath);
+                    await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${filename}`);
+                    setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
+                    break;
+                }
+
                 const existingMessages = stateManager.getMessages(callControlId);
                 stateManager.setProcessing(callControlId, true);
                 stateManager.setAwaitingUserInput(callControlId, true);
@@ -174,6 +210,18 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.playback.ended":
             case "call.speak.ended":
+                // Start the 10-second PIN timeout once the prompt finishes playing
+                if (pinPendingSessions.has(callControlId)) {
+                    const ps = pinPendingSessions.get(callControlId);
+                    if (ps.timer) clearTimeout(ps.timer);
+                    ps.timer = setTimeout(async () => {
+                        if (!pinPendingSessions.has(callControlId)) return;
+                        console.warn(`[PIN] Timeout for ${callControlId}, hanging up`);
+                        pinPendingSessions.delete(callControlId);
+                        await telnyxService.hangupCall(callControlId);
+                    }, PIN_TIMEOUT_MS);
+                    break;
+                }
                 if (!stateManager.sessionExists(callControlId)) break;
                 stateManager.setProcessing(callControlId, false);
                 if (!stateManager.isAwaitingUserInput(callControlId)) {
@@ -193,6 +241,34 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.dtmf.received": {
                 console.log(`[DTMF] Received digit: ${payload.digit} for ${callControlId}`);
+
+                // PIN accumulation for non-whitelisted callers
+                if (pinPendingSessions.has(callControlId)) {
+                    const ps = pinPendingSessions.get(callControlId);
+                    ps.digits += payload.digit;
+                    console.log(`[PIN] Digit ${ps.digits.length}/4 for ${callControlId}`);
+                    if (ps.digits.length >= 4) {
+                        const correctPin = process.env.INBOUND_PIN || "";
+                        clearPinSession(callControlId);
+                        if (ps.digits === correctPin) {
+                            console.log(`[PIN] Correct PIN from ${ps.callerNumber} on ${callControlId}, granting access`);
+                            stateManager.initSession(callControlId);
+                            stateManager.setProcessing(callControlId, true);
+                            stateManager.setAwaitingUserInput(callControlId, true);
+                            const filename = `pin_ok_${callControlId}_${Date.now()}.mp3`;
+                            const audioPath = path.join(audioDir, filename);
+                            await openaiService.generateTTS("Access granted. How can I help you?", audioPath);
+                            await telnyxService.playAudio(callControlId, `${baseUrl}/audio/${filename}`);
+                            setTimeout(() => fs.unlink(audioPath, () => { }), 60000);
+                        } else {
+                            console.warn(`[PIN] Wrong PIN from ${ps.callerNumber} on ${callControlId}, hanging up`);
+                            await telnyxService.hangupCall(callControlId);
+                        }
+                    }
+                    break;
+                }
+
+                // Normal DTMF interrupt handling for whitelisted / authenticated calls
                 cancelRecordingTimer(callControlId);
                 // Prevent any in-flight recording.saved from being processed as a new turn
                 stateManager.setProcessing(callControlId, true);
@@ -288,6 +364,7 @@ app.post("/voice/webhook", async function (req, res) {
 
             case "call.hangup":
                 cancelRecordingTimer(callControlId);
+                clearPinSession(callControlId);
                 stateManager.endSession(callControlId);
                 break;
 

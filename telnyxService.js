@@ -114,6 +114,18 @@ async function rejectCall(callControlId) {
     }
 }
 
+async function hangupCall(callControlId) {
+    try {
+        await telnyx.calls.actions.hangup(callControlId);
+    } catch (err) {
+        if (isCallEndedError(err)) {
+            console.log(`[telnyxService] Call ${callControlId} already ended during hangup attempt.`);
+            return;
+        }
+        console.error(`[telnyxService] Error hanging up call ${callControlId}:`, err.message || err);
+    }
+}
+
 async function createCall(to, from, webhookUrl, connectionId) {
     try {
         const call = await telnyx.calls.dial({
@@ -132,6 +144,7 @@ async function createCall(to, from, webhookUrl, connectionId) {
 module.exports = {
     answerCall,
     rejectCall,
+    hangupCall,
     playAudio,
     stopAudio,
     recordAudio,
